@@ -47,6 +47,23 @@ const ROLE_PERMISSIONS = {
   },
 };
 
+const DEFAULT_DESTINATIONS = ['المجر', 'إسبانيا', 'إيطاليا'];
+
+const normalizeDestination = (value) => (typeof value === 'string' ? value.trim() : '');
+
+const buildDestinationOptions = (...groups) => {
+  const deduped = new Set();
+
+  groups.flat().forEach((value) => {
+    const normalized = normalizeDestination(value);
+    if (normalized) {
+      deduped.add(normalized);
+    }
+  });
+
+  return Array.from(deduped).sort((firstCountry, secondCountry) => firstCountry.localeCompare(secondCountry, 'ar'));
+};
+
 function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -59,6 +76,7 @@ function App() {
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [currentClient, setCurrentClient] = useState(null);
   const [existingClients, setExistingClients] = useState([]);
+  const [destinationOptions, setDestinationOptions] = useState(DEFAULT_DESTINATIONS);
   const { register, handleSubmit, reset, watch } = useForm();
   // eslint-disable-next-line react-hooks/incompatible-library
   const selectedDestination = watch('destination');
@@ -158,6 +176,26 @@ function App() {
     ));
   };
 
+  const loadDestinationOptions = async () => {
+    const [clientsResponse, templatesResponse] = await Promise.all([
+      supabase.from('clients').select('destination'),
+      supabase.from('visa_templates').select('destination'),
+    ]);
+
+    if (clientsResponse.error) {
+      console.error('Failed to load destinations from clients:', clientsResponse.error);
+    }
+
+    if (templatesResponse.error) {
+      console.error('Failed to load destinations from templates:', templatesResponse.error);
+    }
+
+    const clientDestinations = (clientsResponse.data || []).map((row) => row.destination);
+    const templateDestinations = (templatesResponse.data || []).map((row) => row.destination);
+
+    setDestinationOptions(buildDestinationOptions(DEFAULT_DESTINATIONS, clientDestinations, templateDestinations));
+  };
+
   useEffect(() => {
     let isMounted = true;
 
@@ -232,6 +270,7 @@ function App() {
     };
 
     fetchClients();
+    loadDestinationOptions();
   }, [session, profile]);
 
   // هذه الدالة ستعمل عند الضغط على زر "الالمرحلة التالية"
@@ -242,7 +281,12 @@ const onSubmit = async (data) => {
     }
 
     try {
-      const finalDestination = data.destination === 'other' ? data.customDestination : data.destination;
+      const finalDestination = normalizeDestination(data.destination === 'other' ? data.customDestination : data.destination);
+
+      if (!finalDestination) {
+        alert('الرجاء اختيار وجهة صالحة.');
+        return;
+      }
 
       // 1. البحث الذكي عن قالب جاهز لهذه الدولة في Supabase
       const { data: templateData, error: templateError } = await supabase
@@ -280,6 +324,7 @@ const onSubmit = async (data) => {
       const createdClient = newClient[0];
       setCurrentClient(createdClient);
       setExistingClients((prev) => [...prev, createdClient]);
+      setDestinationOptions((previous) => buildDestinationOptions(previous, [finalDestination]));
       reset();
       setCurrentScreen('visa_steps');
       
@@ -634,9 +679,9 @@ const onSubmit = async (data) => {
                 <div className="sm:w-3/4 p-3 flex flex-col gap-2">
                   <select {...register('destination')} className="w-full p-2.5 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 focus:bg-white" required>
                     <option value="">اختر الوجهة...</option>
-                    <option value="المجر">المجر</option>
-                    <option value="إسبانيا">إسبانيا</option>
-                    <option value="إيطاليا">إيطاليا</option>
+                    {destinationOptions.map((country) => (
+                      <option key={country} value={country}>{country}</option>
+                    ))}
                     <option value="other" className="font-bold text-blue-600">+ إضافة بلد جديد غير موجود بالقائمة...</option>
                   </select>
 
