@@ -25,6 +25,25 @@ const VIEW_OPTIONS = [
   { value: 'all', label: 'الكل' },
 ];
 
+const WORKSPACE_SCOPE = {
+  study: {
+    title: 'لوحة الفيزا الدراسية',
+    description: 'متابعة ملفات الدراسة، الحالات، وتصدير التقارير.',
+    searchPlaceholder: 'ابحث عن عميل دراسة أو دولة...',
+    clientTitle: 'العملاء (الدراسة)',
+    currentClientTitle: 'العميل الدراسي الحالي',
+    countryStatsTitle: 'إحصاءات الدول (الدراسة)',
+  },
+  tourism: {
+    title: 'لوحة السياحة والأسفار',
+    description: 'متابعة ملفات السياحة الحديثة، الحالات، وتصدير التقارير.',
+    searchPlaceholder: 'ابحث عن عميل سياحة أو وجهة...',
+    clientTitle: 'العملاء (السياحة)',
+    currentClientTitle: 'الملف السياحي الحالي',
+    countryStatsTitle: 'إحصاءات الدول (السياحة)',
+  },
+};
+
 const normalizeStatus = (status) => {
   if (status === 'completed') return 'completed';
   if (status === 'canceled' || status === 'cancelled') return 'canceled';
@@ -202,6 +221,8 @@ export default function WorkspaceSidebar({
   onUpdateClientStatus,
   canUpdateClientStatus,
   onClose,
+  scope = 'study',
+  onlyRecent = false,
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [viewFilter, setViewFilter] = useState('working');
@@ -209,21 +230,33 @@ export default function WorkspaceSidebar({
   const overview = useMemo(() => buildOverview(clients), [clients]);
   const countryStats = useMemo(() => buildCountryStats(clients), [clients]);
 
+  const scopeMeta = WORKSPACE_SCOPE[scope] || WORKSPACE_SCOPE.study;
+
+  const recentClients = useMemo(() => {
+    return [...clients].sort((firstClient, secondClient) => {
+      const firstTime = new Date(firstClient.created_at || 0).getTime();
+      const secondTime = new Date(secondClient.created_at || 0).getTime();
+      return secondTime - firstTime;
+    }).slice(0, 30);
+  }, [clients]);
+
+  const sourceClients = onlyRecent ? recentClients : clients;
+
   const filteredClients = useMemo(() => {
     const normalizedSearch = searchTerm.trim().toLowerCase();
 
-    return clients.filter((client) => {
+    return sourceClients.filter((client) => {
       const currentStatus = normalizeStatus(client.status);
       const matchesStatus = viewFilter === 'all' || currentStatus === viewFilter;
       const matchesSearch =
         !normalizedSearch ||
-        [client.first_name, client.last_name, client.destination]
+        [client.first_name, client.last_name, client.destination, client.client_name]
           .filter(Boolean)
           .some((value) => value.toLowerCase().includes(normalizedSearch));
 
       return matchesStatus && matchesSearch;
     });
-  }, [clients, searchTerm, viewFilter]);
+  }, [sourceClients, searchTerm, viewFilter]);
 
   const handleExportExcel = () => {
     exportToExcel(clients, countryStats, overview);
@@ -308,8 +341,8 @@ export default function WorkspaceSidebar({
               <div className="relative flex items-start justify-between gap-3">
                 <div>
                   <div className="text-xs uppercase tracking-[0.35em] text-slate-300 mb-3">مساحة العمل</div>
-                  <h2 className="text-2xl font-black mb-2 leading-tight">لوحة العملاء والتقارير</h2>
-                  <p className="text-sm text-slate-300 leading-6">اختر عميلًا، تابع الإجمالي حسب الدولة، واطبع التقرير مباشرة من هنا.</p>
+                  <h2 className="text-2xl font-black mb-2 leading-tight">{scopeMeta.title}</h2>
+                  <p className="text-sm text-slate-300 leading-6">{scopeMeta.description}</p>
                 </div>
                 {onClose && (
                   <button
@@ -345,7 +378,7 @@ export default function WorkspaceSidebar({
             <div className="rounded-[2rem] border border-slate-200 bg-white p-4 space-y-4 shadow-sm">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <h3 className="font-black text-slate-900 text-lg">اختر العملاء</h3>
+                  <h3 className="font-black text-slate-900 text-lg">{scopeMeta.clientTitle}</h3>
                   <p className="text-xs text-slate-500">فلتر بالحالة أو ابحث بالاسم أو الدولة.</p>
                 </div>
                 <button
@@ -378,7 +411,7 @@ export default function WorkspaceSidebar({
                 type="text"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="ابحث عن عميل أو دولة..."
+                placeholder={scopeMeta.searchPlaceholder}
                 className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
               />
 
@@ -424,7 +457,7 @@ export default function WorkspaceSidebar({
               <div className="rounded-[2rem] border border-slate-200 bg-white p-4 space-y-3 shadow-sm">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <h3 className="font-black text-slate-900 text-lg">العميل الحالي</h3>
+                    <h3 className="font-black text-slate-900 text-lg">{scopeMeta.currentClientTitle}</h3>
                     <p className="text-xs text-slate-500">العميل المختار للعمل عليه الآن.</p>
                   </div>
                   <span className={`rounded-full border px-3 py-1 text-xs font-bold ${getStatusMeta(currentClient.status).badge}`}>
@@ -463,7 +496,7 @@ export default function WorkspaceSidebar({
             <div className="rounded-[2rem] border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-center justify-between gap-3 mb-3">
                 <div>
-                  <h3 className="font-black text-slate-900 text-lg">إحصاءات الدول</h3>
+                  <h3 className="font-black text-slate-900 text-lg">{scopeMeta.countryStatsTitle}</h3>
                   <p className="text-xs text-slate-500">قيد العمل، مكتمل، وملغى لكل دولة.</p>
                 </div>
                 <button

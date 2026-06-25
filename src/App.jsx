@@ -5,12 +5,18 @@ import logo from './assets/logo.png';
 import VisaSteps from './components/VisaSteps';
 import EmployeeAccessManager from './components/EmployeeAccessManager';
 import TemplateManager from './components/TemplateManager';
+import TemplateScopeSelector from './components/TemplateScopeSelector';
 import WorkspaceSidebar from './components/WorkspaceSidebar';
 import ProfilePanel from './components/ProfilePanel';
+import TourismCountriesPanel from './components/TourismCountriesPanel';
+import TourismVisaRequestForm from './components/TourismVisaRequestForm';
+import TourismVisaSteps from './components/TourismVisaSteps';
+import TourismTemplateManager from './components/TourismTemplateManager';
 
 const ROLE_LABELS = {
   admin: 'مدير النظام',
   visa_editor: 'محرر ملفات الفيزا',
+  tourism_editor: 'محرر ملفات السياحة',
   notes_only: 'ملاحظات فقط',
 };
 
@@ -28,6 +34,16 @@ const ROLE_PERMISSIONS = {
   visa_editor: {
     canStartVisa: true,
     canStartTourism: false,
+    canRestoreClient: true,
+    canCreateClient: true,
+    canEditStructure: true,
+    canEditItemProgress: true,
+    canManageTemplates: false,
+    canManageEmployees: false,
+  },
+  tourism_editor: {
+    canStartVisa: false,
+    canStartTourism: true,
     canRestoreClient: true,
     canCreateClient: true,
     canEditStructure: true,
@@ -74,8 +90,13 @@ function App() {
   const [currentScreen, setCurrentScreen] = useState('home');
   const [userDropdownOpen, setUserDropdownOpen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceScopeSelectorOpen, setWorkspaceScopeSelectorOpen] = useState(false);
+  const [workspaceScope, setWorkspaceScope] = useState(null);
   const [currentClient, setCurrentClient] = useState(null);
+  const [tourismSelection, setTourismSelection] = useState(null);
+  const [currentTourismRequest, setCurrentTourismRequest] = useState(null);
   const [existingClients, setExistingClients] = useState([]);
+  const [tourismRequests, setTourismRequests] = useState([]);
   const [destinationOptions, setDestinationOptions] = useState(DEFAULT_DESTINATIONS);
   const { register, handleSubmit, reset, watch } = useForm();
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -89,12 +110,26 @@ function App() {
   };
 
   const toggleWorkspace = () => {
-    setWorkspaceOpen((previous) => !previous);
+    if (workspaceOpen || workspaceScopeSelectorOpen) {
+      setWorkspaceOpen(false);
+      setWorkspaceScopeSelectorOpen(false);
+      return;
+    }
+
+    setWorkspaceScopeSelectorOpen(true);
     setUserDropdownOpen(false);
   };
 
   const closeWorkspace = () => {
     setWorkspaceOpen(false);
+    setWorkspaceScopeSelectorOpen(false);
+  };
+
+  const openWorkspaceScope = (scope) => {
+    setWorkspaceScope(scope);
+    setWorkspaceOpen(true);
+    setWorkspaceScopeSelectorOpen(false);
+    setUserDropdownOpen(false);
   };
 
   const loadUserProfile = async (userId) => {
@@ -148,16 +183,25 @@ function App() {
   const handleSelectClient = (client) => {
     if (!client) return;
 
-    setCurrentClient(client);
-    setCurrentScreen('visa_steps');
+    if (workspaceScope === 'tourism') {
+      setCurrentTourismRequest(client);
+      setCurrentScreen('tourism_steps');
+    } else {
+      setCurrentClient(client);
+      setCurrentScreen('visa_steps');
+    }
+
     setUserDropdownOpen(false);
+    setWorkspaceOpen(false);
   };
 
   const handleUpdateClientStatus = async (clientId, nextStatus) => {
     const status = nextStatus === 'cancelled' ? 'canceled' : nextStatus;
 
+    const tableName = workspaceScope === 'tourism' ? 'tourism_visa_requests' : 'clients';
+
     const { error } = await supabase
-      .from('clients')
+      .from(tableName)
       .update({ status })
       .eq('id', clientId);
 
@@ -167,13 +211,23 @@ function App() {
       return;
     }
 
-    setExistingClients((previousClients) => previousClients.map((client) => (
-      client.id === clientId ? { ...client, status } : client
-    )));
+    if (workspaceScope === 'tourism') {
+      setTourismRequests((previousRequests) => previousRequests.map((request) => (
+        request.id === clientId ? { ...request, status } : request
+      )));
 
-    setCurrentClient((previousClient) => (
-      previousClient?.id === clientId ? { ...previousClient, status } : previousClient
-    ));
+      setCurrentTourismRequest((previousRequest) => (
+        previousRequest?.id === clientId ? { ...previousRequest, status } : previousRequest
+      ));
+    } else {
+      setExistingClients((previousClients) => previousClients.map((client) => (
+        client.id === clientId ? { ...client, status } : client
+      )));
+
+      setCurrentClient((previousClient) => (
+        previousClient?.id === clientId ? { ...previousClient, status } : previousClient
+      ));
+    }
   };
 
   const loadDestinationOptions = async () => {
@@ -248,6 +302,22 @@ function App() {
     setCurrentScreen('home');
     setUserDropdownOpen(false);
     setCurrentClient(null);
+    setTourismSelection(null);
+    setCurrentTourismRequest(null);
+  };
+
+  const handleOpenTourismRequest = (selection) => {
+    if (!selection?.country || !selection?.visaType) return;
+
+    setTourismSelection(selection);
+    setCurrentTourismRequest(null);
+    setCurrentScreen('tourism_request');
+    setUserDropdownOpen(false);
+  };
+
+  const handleCreateTourismRequest = (request) => {
+    setCurrentTourismRequest(request);
+    setCurrentScreen('tourism_steps');
   };
 
   useEffect(() => {
@@ -269,7 +339,29 @@ function App() {
       setExistingClients(data || []);
     };
 
+    const fetchTourismRequests = async () => {
+      const { data, error } = await supabase
+        .from('tourism_visa_requests')
+        .select('id, client_name, country_name, visa_type_name, civil_status, stages_data, status, created_at')
+        .order('created_at', { ascending: false });
+
+      if (error) {
+        console.error('Failed to load tourism requests:', error);
+        return;
+      }
+
+      const mapped = (data || []).map((row) => ({
+        ...row,
+        first_name: row.client_name || 'عميل سياحي',
+        last_name: '',
+        destination: row.country_name || 'غير محددة',
+      }));
+
+      setTourismRequests(mapped);
+    };
+
     fetchClients();
+    fetchTourismRequests();
     loadDestinationOptions();
   }, [session, profile]);
 
@@ -445,14 +537,57 @@ const onSubmit = async (data) => {
               />
               <aside className="absolute inset-y-0 left-0 w-full max-w-[420px] bg-white shadow-2xl border-r border-slate-200 overflow-y-auto">
                 <WorkspaceSidebar
-                  clients={existingClients}
-                  currentClient={currentClient}
+                  clients={workspaceScope === 'tourism' ? tourismRequests : existingClients}
+                  currentClient={workspaceScope === 'tourism' ? currentTourismRequest : currentClient}
                   onSelectClient={handleSelectClient}
                   onUpdateClientStatus={handleUpdateClientStatus}
                   canUpdateClientStatus={currentPermissions.canEditStructure}
+                  scope={workspaceScope === 'tourism' ? 'tourism' : 'study'}
+                  onlyRecent={workspaceScope === 'tourism'}
                   onClose={closeWorkspace}
                 />
               </aside>
+            </div>
+          )}
+
+          {workspaceScopeSelectorOpen && (
+            <div className="fixed inset-0 z-40">
+              <button
+                type="button"
+                aria-label="إغلاق اختيار مساحة العمل"
+                onClick={() => setWorkspaceScopeSelectorOpen(false)}
+                className="absolute inset-0 bg-slate-950/40 backdrop-blur-[2px]"
+              />
+
+              <div className="absolute inset-0 flex items-center justify-center p-4">
+                <div className="w-full max-w-xl rounded-3xl border border-slate-200 bg-white shadow-2xl p-6" dir="rtl">
+                  <div className="mb-4">
+                    <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">Workspace Scope</div>
+                    <h3 className="text-2xl font-black text-slate-900">اختر نوع مساحة العمل</h3>
+                    <p className="text-sm text-slate-500 mt-1">حدد المسار الذي تريد متابعته الآن.</p>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceScope('study')}
+                      className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-right hover:border-rose-300 hover:shadow-sm transition"
+                    >
+                      <div className="text-xs font-bold text-rose-700 tracking-[0.18em] mb-2">STUDY VISA</div>
+                      <div className="font-black text-slate-900">الفيزا الدراسية</div>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => openWorkspaceScope('tourism')}
+                      className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-right hover:border-emerald-300 hover:shadow-sm transition"
+                    >
+                      <div className="text-xs font-bold text-emerald-700 tracking-[0.18em] mb-2">TOURISM</div>
+                      <div className="font-black text-slate-900">قسم السياحة والأسفار</div>
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -513,7 +648,7 @@ const onSubmit = async (data) => {
                       <button
                         type="button"
                         onClick={() => {
-                          setCurrentScreen('templates');
+                          setCurrentScreen('template_scope');
                           setUserDropdownOpen(false);
                         }}
                         className="block w-full text-right px-4 py-2 text-sm hover:bg-slate-50 transition font-semibold text-blue-600"
@@ -547,8 +682,20 @@ const onSubmit = async (data) => {
               <EmployeeAccessManager onBack={handleHomeBack} currentUserId={session.user.id} />
             )}
 
+            {currentScreen === 'template_scope' && currentPermissions.canManageTemplates && (
+              <TemplateScopeSelector
+                onBack={handleHomeBack}
+                onSelectStudy={() => setCurrentScreen('templates')}
+                onSelectTourism={() => setCurrentScreen('tourism_templates')}
+              />
+            )}
+
             {currentScreen === 'templates' && currentPermissions.canManageTemplates && (
               <TemplateManager onBack={handleHomeBack} />
+            )}
+
+            {currentScreen === 'tourism_templates' && currentPermissions.canManageTemplates && (
+              <TourismTemplateManager onBack={() => setCurrentScreen('template_scope')} />
             )}
 
             {currentScreen === 'profile' && (
@@ -559,6 +706,30 @@ const onSubmit = async (data) => {
                 permissions={currentPermissions}
                 onBack={handleHomeBack}
                 onLogout={handleLogout}
+              />
+            )}
+
+            {currentScreen === 'tourism' && currentPermissions.canStartTourism && (
+              <TourismCountriesPanel onBack={handleHomeBack} onSelectVisaType={handleOpenTourismRequest} />
+            )}
+
+            {currentScreen === 'tourism_request' && currentPermissions.canStartTourism && tourismSelection && (
+              <TourismVisaRequestForm
+                country={tourismSelection.country}
+                visaType={tourismSelection.visaType}
+                onCreateRequest={handleCreateTourismRequest}
+                onBack={() => setCurrentScreen('tourism')}
+              />
+            )}
+
+            {currentScreen === 'tourism_steps' && currentPermissions.canStartTourism && currentTourismRequest && (
+              <TourismVisaSteps
+                key={currentTourismRequest.id}
+                request={currentTourismRequest}
+                onBack={() => setCurrentScreen('tourism_request')}
+                canEditStructure={currentPermissions.canEditStructure}
+                canEditItemProgress={currentPermissions.canEditItemProgress}
+                canManageTemplates={currentPermissions.canManageTemplates}
               />
             )}
 
@@ -607,7 +778,7 @@ const onSubmit = async (data) => {
 
             {/* زر مسار السياحة (باللون الأخضر الاحترافي) */}
             <button 
-              onClick={() => currentPermissions.canStartTourism && alert('تم اختيار قسم السياحة والأسفار (قيد التطوير مستقبلاً)')}
+              onClick={() => currentPermissions.canStartTourism && setCurrentScreen('tourism')}
               disabled={!currentPermissions.canStartTourism}
               className={`group relative overflow-hidden rounded-[2rem] border-2 p-8 text-center shadow-sm transition-all duration-300 flex flex-col items-center transform hover:-translate-y-1 ${currentPermissions.canStartTourism ? 'cursor-pointer border-emerald-100 bg-gradient-to-br from-white via-emerald-50/60 to-teal-100 hover:border-emerald-400 hover:shadow-2xl' : 'cursor-not-allowed border-slate-200 bg-white opacity-60'}`}
             >

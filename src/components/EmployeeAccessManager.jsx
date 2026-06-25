@@ -5,6 +5,7 @@ import EmployeeInvitePanel from './EmployeeInvitePanel';
 const ROLE_OPTIONS = [
   { value: 'admin', label: 'مدير النظام' },
   { value: 'visa_editor', label: 'محرر ملفات الفيزا' },
+  { value: 'tourism_editor', label: 'محرر ملفات السياحة' },
   { value: 'notes_only', label: 'ملاحظات فقط' },
 ];
 
