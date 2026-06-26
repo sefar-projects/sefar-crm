@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useForm } from 'react-hook-form';
 import { supabase } from './supabaseClient'; // أضفنا هذا السطر
 import logo from './assets/logo.png';
@@ -99,6 +99,7 @@ function App() {
   const [tourismRequests, setTourismRequests] = useState([]);
   const [destinationOptions, setDestinationOptions] = useState(DEFAULT_DESTINATIONS);
   const { register, handleSubmit, reset, watch } = useForm();
+  const previousAuthUserIdRef = useRef(null);
   // eslint-disable-next-line react-hooks/incompatible-library
   const selectedDestination = watch('destination');
   const roleKey = profile?.role || 'notes_only';
@@ -263,6 +264,7 @@ function App() {
 
       const nextSession = data?.session || null;
       setSession(nextSession);
+      previousAuthUserIdRef.current = nextSession?.user?.id || null;
 
       if (nextSession?.user) {
         await loadUserProfile(nextSession.user.id);
@@ -278,7 +280,11 @@ function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      const previousUserId = previousAuthUserIdRef.current;
+      const nextUserId = nextSession?.user?.id || null;
+
       setSession(nextSession);
+      previousAuthUserIdRef.current = nextUserId;
 
       if (event === 'SIGNED_OUT' || !nextSession?.user) {
         setCurrentScreen('home');
@@ -288,11 +294,14 @@ function App() {
         setWorkspaceOpen(false);
         setWorkspaceScopeSelectorOpen(false);
         setProfile(null);
+        previousAuthUserIdRef.current = null;
         setAuthLoading(false);
         return;
       }
 
-      if (event === 'SIGNED_IN') {
+      const isRealSignIn = event === 'SIGNED_IN' && previousUserId !== nextUserId;
+
+      if (isRealSignIn) {
         setCurrentScreen('home');
         setCurrentClient(null);
         setTourismSelection(null);
