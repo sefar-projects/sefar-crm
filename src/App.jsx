@@ -64,6 +64,7 @@ const ROLE_PERMISSIONS = {
 };
 
 const DEFAULT_DESTINATIONS = ['المجر', 'إسبانيا', 'إيطاليا'];
+const UI_STATE_STORAGE_KEY = 'sefar_crm_ui_state_v1';
 
 const normalizeDestination = (value) => (typeof value === 'string' ? value.trim() : '');
 
@@ -78,6 +79,34 @@ const buildDestinationOptions = (...groups) => {
   });
 
   return Array.from(deduped).sort((firstCountry, secondCountry) => firstCountry.localeCompare(secondCountry, 'ar'));
+};
+
+const getSafeRestoredScreen = (screen, permissions, restoredState) => {
+  if (!screen || typeof screen !== 'string') return 'home';
+
+  const simpleScreens = ['home', 'profile', 'visa_start', 'tourism', 'template_scope', 'templates', 'tourism_templates', 'employees'];
+
+  if (simpleScreens.includes(screen)) {
+    if (screen === 'employees' && !permissions.canManageEmployees) return 'home';
+    if (['template_scope', 'templates', 'tourism_templates'].includes(screen) && !permissions.canManageTemplates) return 'home';
+    if (screen === 'tourism' && !permissions.canStartTourism) return 'home';
+    if (screen === 'visa_start' && (!permissions.canStartVisa || !permissions.canCreateClient)) return 'home';
+    return screen;
+  }
+
+  if (screen === 'visa_steps') {
+    return permissions.canStartVisa && restoredState?.currentClient ? 'visa_steps' : 'home';
+  }
+
+  if (screen === 'tourism_request') {
+    return permissions.canStartTourism && restoredState?.tourismSelection ? 'tourism_request' : 'home';
+  }
+
+  if (screen === 'tourism_steps') {
+    return permissions.canStartTourism && restoredState?.currentTourismRequest ? 'tourism_steps' : 'home';
+  }
+
+  return 'home';
 };
 
 function App() {
@@ -100,6 +129,7 @@ function App() {
   const [destinationOptions, setDestinationOptions] = useState(DEFAULT_DESTINATIONS);
   const { register, handleSubmit, reset, watch } = useForm();
   const previousAuthUserIdRef = useRef(null);
+  const sessionUserId = session?.user?.id || null;
   // eslint-disable-next-line react-hooks/incompatible-library
   const selectedDestination = watch('destination');
   const roleKey = profile?.role || 'notes_only';
@@ -287,6 +317,12 @@ function App() {
       previousAuthUserIdRef.current = nextUserId;
 
       if (event === 'SIGNED_OUT' || !nextSession?.user) {
+        try {
+          localStorage.removeItem(UI_STATE_STORAGE_KEY);
+        } catch (storageError) {
+          console.error('Failed to clear persisted UI state:', storageError);
+        }
+
         setCurrentScreen('home');
         setCurrentClient(null);
         setTourismSelection(null);
@@ -317,6 +353,59 @@ function App() {
       subscription.unsubscribe();
     };
   }, []);
+
+  useEffect(() => {
+    if (!sessionUserId || !profile) return;
+
+    try {
+      const rawState = localStorage.getItem(UI_STATE_STORAGE_KEY);
+      if (!rawState) return;
+
+      const restoredState = JSON.parse(rawState);
+      if (!restoredState || restoredState.userId !== sessionUserId) return;
+
+      const permissions = ROLE_PERMISSIONS[profile.role] || ROLE_PERMISSIONS.notes_only;
+      const safeScreen = getSafeRestoredScreen(restoredState.currentScreen, permissions, restoredState);
+
+      setCurrentClient(restoredState.currentClient || null);
+      setTourismSelection(restoredState.tourismSelection || null);
+      setCurrentTourismRequest(restoredState.currentTourismRequest || null);
+      setWorkspaceScope(restoredState.workspaceScope === 'tourism' ? 'tourism' : restoredState.workspaceScope === 'study' ? 'study' : null);
+      setWorkspaceOpen(false);
+      setWorkspaceScopeSelectorOpen(false);
+      setUserDropdownOpen(false);
+      setCurrentScreen(safeScreen);
+    } catch (storageError) {
+      console.error('Failed to restore persisted UI state:', storageError);
+    }
+  }, [sessionUserId, profile?.role, profile]);
+
+  useEffect(() => {
+    if (!sessionUserId || !profile) return;
+
+    const permissions = ROLE_PERMISSIONS[profile.role] || ROLE_PERMISSIONS.notes_only;
+    const safeScreen = getSafeRestoredScreen(currentScreen, permissions, {
+      currentClient,
+      tourismSelection,
+      currentTourismRequest,
+    });
+
+    const stateToPersist = {
+      userId: sessionUserId,
+      currentScreen: safeScreen,
+      workspaceScope,
+      currentClient,
+      tourismSelection,
+      currentTourismRequest,
+      savedAt: Date.now(),
+    };
+
+    try {
+      localStorage.setItem(UI_STATE_STORAGE_KEY, JSON.stringify(stateToPersist));
+    } catch (storageError) {
+      console.error('Failed to persist UI state:', storageError);
+    }
+  }, [sessionUserId, profile, profile?.role, currentScreen, workspaceScope, currentClient, tourismSelection, currentTourismRequest]);
 
   const handleHomeBack = () => {
     setCurrentScreen('home');
