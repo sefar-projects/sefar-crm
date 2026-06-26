@@ -277,15 +277,26 @@ function App() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       setSession(nextSession);
-      setCurrentScreen('home');
-      setCurrentClient(null);
 
-      if (!nextSession?.user) {
+      if (event === 'SIGNED_OUT' || !nextSession?.user) {
+        setCurrentScreen('home');
+        setCurrentClient(null);
+        setTourismSelection(null);
+        setCurrentTourismRequest(null);
+        setWorkspaceOpen(false);
+        setWorkspaceScopeSelectorOpen(false);
         setProfile(null);
         setAuthLoading(false);
         return;
+      }
+
+      if (event === 'SIGNED_IN') {
+        setCurrentScreen('home');
+        setCurrentClient(null);
+        setTourismSelection(null);
+        setCurrentTourismRequest(null);
       }
 
       await loadUserProfile(nextSession.user.id);
