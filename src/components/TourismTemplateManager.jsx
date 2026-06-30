@@ -5,7 +5,7 @@ const CIVIL_STATUS_OPTIONS = [
   { value: 'retired', label: 'متقاعد' },
   { value: 'student', label: 'متمدرس' },
   { value: 'merchant', label: 'تاجر' },
-  { value: 'public_employee', label: 'موظف عمومي' },
+  { value: 'public_employee', label: 'موظف' },
   { value: 'unemployed', label: 'بطال' },
 ];
 
