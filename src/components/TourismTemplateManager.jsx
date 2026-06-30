@@ -69,11 +69,14 @@ const normalizeStages = (input) => {
 
 export default function TourismTemplateManager({ onBack }) {
   const [countries, setCountries] = useState([]);
+  const [allVisaTypes, setAllVisaTypes] = useState([]);
+  const [tourismTemplates, setTourismTemplates] = useState([]);
   const [visaTypes, setVisaTypes] = useState([]);
   const [countryId, setCountryId] = useState('');
   const [visaTypeId, setVisaTypeId] = useState('');
   const [civilStatus, setCivilStatus] = useState('');
   const [sponsorCivilStatus, setSponsorCivilStatus] = useState('');
+  const [sourceTemplateId, setSourceTemplateId] = useState('');
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -93,37 +96,87 @@ export default function TourismTemplateManager({ onBack }) {
     [visaTypes, visaTypeId],
   );
 
+  const allVisaTypesMap = useMemo(
+    () => Object.fromEntries(allVisaTypes.map((visaType) => [visaType.id, visaType.name])),
+    [allVisaTypes],
+  );
+
+  const countryNamesMap = useMemo(
+    () => Object.fromEntries(countries.map((country) => [country.id, country.name])),
+    [countries],
+  );
+
+  const sourceTemplateOptions = useMemo(() => tourismTemplates.map((template) => {
+    const civilStatusLabel = CIVIL_STATUS_OPTIONS.find((option) => option.value === template.civil_status)?.label || template.civil_status;
+    const sponsorLabel = template.sponsor_civil_status && template.sponsor_civil_status !== NO_SPONSOR_TEMPLATE_KEY
+      ? ` - كفيل: ${CIVIL_STATUS_OPTIONS.find((option) => option.value === template.sponsor_civil_status)?.label || template.sponsor_civil_status}`
+      : '';
+
+    return {
+      value: String(template.id),
+      label: `${countryNamesMap[template.country_id] || 'بلد'} - ${allVisaTypesMap[template.visa_type_id] || 'نوع فيزا'} - ${civilStatusLabel}${sponsorLabel}`,
+    };
+  }), [tourismTemplates, countryNamesMap, allVisaTypesMap]);
+
   useEffect(() => {
     let isActive = true;
 
-    const loadCountries = async () => {
+    const loadInitialData = async () => {
       setLoading(true);
 
-      const { data, error } = await supabase
-        .from('tourism_countries')
-        .select('id, name')
-        .order('name', { ascending: true });
+      const [countriesResponse, visaTypesResponse, templatesResponse] = await Promise.all([
+        supabase
+          .from('tourism_countries')
+          .select('id, name')
+          .order('name', { ascending: true }),
+        supabase
+          .from('tourism_visa_types')
+          .select('id, country_id, name')
+          .order('name', { ascending: true }),
+        supabase
+          .from('tourism_visa_templates')
+          .select('id, country_id, visa_type_id, civil_status, sponsor_civil_status, stages_data')
+          .order('id', { ascending: false }),
+      ]);
 
       if (!isActive) return;
 
-      if (error) {
-        console.error('Failed to load tourism countries for template manager:', error);
-        setErrorMessage('تعذر تحميل البلدان من قسم السياحة.');
+      if (countriesResponse.error || visaTypesResponse.error || templatesResponse.error) {
+        console.error('Failed to load tourism template manager data:', countriesResponse.error || visaTypesResponse.error || templatesResponse.error);
+        setErrorMessage('تعذر تحميل بيانات مدير القوالب السياحية.');
         setCountries([]);
+        setAllVisaTypes([]);
+        setTourismTemplates([]);
         setLoading(false);
         return;
       }
 
-      setCountries(data || []);
+      setCountries(countriesResponse.data || []);
+      setAllVisaTypes(visaTypesResponse.data || []);
+      setTourismTemplates(templatesResponse.data || []);
       setLoading(false);
     };
 
-    void loadCountries();
+    void loadInitialData();
 
     return () => {
       isActive = false;
     };
   }, []);
+
+  const refreshTourismTemplates = async () => {
+    const { data, error } = await supabase
+      .from('tourism_visa_templates')
+      .select('id, country_id, visa_type_id, civil_status, sponsor_civil_status, stages_data')
+      .order('id', { ascending: false });
+
+    if (error) {
+      console.error('Failed to refresh tourism templates list:', error);
+      return;
+    }
+
+    setTourismTemplates(data || []);
+  };
 
   useEffect(() => {
     let isActive = true;
@@ -360,6 +413,20 @@ export default function TourismTemplateManager({ onBack }) {
 
     setSaving(false);
     setMessage('تم حفظ القالب السياحي بنجاح. سيُطبق على العملاء المستقبليين لنفس الاختيار.');
+    await refreshTourismTemplates();
+  };
+
+  const handleCopyFromTemplate = () => {
+    const sourceTemplate = tourismTemplates.find((template) => String(template.id) === sourceTemplateId);
+    if (!sourceTemplate) {
+      setErrorMessage('اختر قالباً صحيحاً للنسخ.');
+      return;
+    }
+
+    const copiedStages = normalizeStages(sourceTemplate.stages_data || []);
+    setStages(copiedStages);
+    setErrorMessage('');
+    setMessage('تم نسخ محتوى القالب إلى المحرر. يمكنك الآن حفظه على الاختيار الحالي.');
   };
 
   return (
@@ -385,6 +452,32 @@ export default function TourismTemplateManager({ onBack }) {
         </div>
 
         <div className="p-6 space-y-5">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">نسخ من قالب موجود</label>
+                <select
+                  value={sourceTemplateId}
+                  onChange={(event) => setSourceTemplateId(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">اختر القالب المصدر...</option>
+                  {sourceTemplateOptions.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="button"
+                onClick={handleCopyFromTemplate}
+                disabled={!sourceTemplateId}
+                className="rounded-xl bg-slate-800 px-4 py-3 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-60"
+              >
+                نسخ إلى المحرر
+              </button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-sm font-semibold text-slate-700 mb-2">البلد</label>

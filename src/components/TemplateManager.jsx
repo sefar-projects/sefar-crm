@@ -90,6 +90,7 @@ export default function TemplateManager({ onBack }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [selectedTemplateId, setSelectedTemplateId] = useState(null);
+  const [sourceTemplateId, setSourceTemplateId] = useState('');
   const [formData, setFormData] = useState(DEFAULT_TEMPLATE);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -161,6 +162,31 @@ export default function TemplateManager({ onBack }) {
     setFormData(DEFAULT_TEMPLATE);
     setMessage('');
     setErrorMessage('');
+  };
+
+  const handleCloneAsNewTemplate = () => {
+    if (!selectedTemplateId) return;
+
+    setSelectedTemplateId(null);
+    setMessage('تم نسخ القالب كنسخة جديدة. عدّل الوجهة أو المستوى ثم احفظ.');
+    setErrorMessage('');
+  };
+
+  const handleCopyFromTemplate = () => {
+    const sourceTemplate = templates.find((template) => String(template.id) === sourceTemplateId);
+    if (!sourceTemplate) {
+      setErrorMessage('اختر قالباً صحيحاً للنسخ.');
+      return;
+    }
+
+    setSelectedTemplateId(null);
+    setFormData({
+      destination: sourceTemplate.destination || '',
+      education_level: sourceTemplate.education_level || '',
+      stages_data: normalizeStages(sourceTemplate.stages_data),
+    });
+    setErrorMessage('');
+    setMessage('تم نسخ القالب إلى المحرر. غيّر الوجهة أو المستوى ثم احفظ كقالب جديد أو استبدل الموجود.');
   };
 
   const updateStage = (stageIndex, field, value) => {
@@ -308,9 +334,12 @@ export default function TemplateManager({ onBack }) {
     setErrorMessage('');
 
     try {
+      const normalizedDestination = formData.destination.trim();
+      const normalizedEducationLevel = formData.education_level.trim();
+
       const payload = {
-        destination: formData.destination.trim(),
-        education_level: formData.education_level.trim() || null,
+        destination: normalizedDestination,
+        education_level: normalizedEducationLevel || null,
         stages_data: formData.stages_data,
       };
 
@@ -318,17 +347,71 @@ export default function TemplateManager({ onBack }) {
         throw new Error('الوجهة مطلوبة.');
       }
 
-      const query = selectedTemplateId
-        ? supabase.from('visa_templates').update(payload).eq('id', selectedTemplateId)
-        : supabase.from('visa_templates').insert([payload]);
+      if (selectedTemplateId) {
+        const { error } = await supabase
+          .from('visa_templates')
+          .update(payload)
+          .eq('id', selectedTemplateId)
+          .select();
 
-      const { error } = await query.select();
+        if (error) {
+          throw error;
+        }
 
-      if (error) {
-        throw error;
+        setMessage('تم تحديث القالب بنجاح.');
+      } else {
+        let existingTemplateQuery = supabase
+          .from('visa_templates')
+          .select('id')
+          .eq('destination', normalizedDestination)
+          .limit(1);
+
+        if (normalizedEducationLevel) {
+          existingTemplateQuery = existingTemplateQuery.eq('education_level', normalizedEducationLevel);
+        } else {
+          existingTemplateQuery = existingTemplateQuery.is('education_level', null);
+        }
+
+        const { data: existingRows, error: existingError } = await existingTemplateQuery;
+        if (existingError) {
+          throw existingError;
+        }
+
+        const existingTemplate = existingRows?.[0] || null;
+
+        if (existingTemplate) {
+          const shouldOverwrite = window.confirm('يوجد قالب بنفس الوجهة والمستوى. هل تريد استبداله؟');
+          if (!shouldOverwrite) {
+            setSaving(false);
+            setMessage('تم إلغاء الحفظ.');
+            return;
+          }
+
+          const { error: overwriteError } = await supabase
+            .from('visa_templates')
+            .update(payload)
+            .eq('id', existingTemplate.id)
+            .select();
+
+          if (overwriteError) {
+            throw overwriteError;
+          }
+
+          setMessage('تم استبدال القالب الموجود بنجاح.');
+        } else {
+          const { error: insertError } = await supabase
+            .from('visa_templates')
+            .insert([payload])
+            .select();
+
+          if (insertError) {
+            throw insertError;
+          }
+
+          setMessage('تم إنشاء القالب بنجاح.');
+        }
       }
 
-      setMessage(selectedTemplateId ? 'تم تحديث القالب بنجاح.' : 'تم إنشاء القالب بنجاح.');
       await loadTemplates();
       handleNewTemplate();
     } catch (error) {
@@ -428,6 +511,34 @@ export default function TemplateManager({ onBack }) {
 
         <section className="bg-white rounded-3xl border border-slate-200 shadow-sm p-5">
           <form onSubmit={handleSave} className="space-y-5">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-end">
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">نسخ من قالب موجود</label>
+                  <select
+                    value={sourceTemplateId}
+                    onChange={(event) => setSourceTemplateId(event.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-3 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">اختر القالب المصدر...</option>
+                    {templates.map((template) => (
+                      <option key={template.id} value={String(template.id)}>
+                        {template.destination} - {template.education_level || 'بدون مستوى'}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleCopyFromTemplate}
+                  disabled={!sourceTemplateId}
+                  className="rounded-xl bg-slate-800 px-5 py-3 text-sm font-bold text-white hover:bg-slate-900 disabled:opacity-60"
+                >
+                  نسخ إلى المحرر
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">الوجهة</label>
@@ -674,6 +785,16 @@ export default function TemplateManager({ onBack }) {
               >
                 {selectedTemplateId ? 'حفظ التغييرات' : 'إنشاء القالب'}
               </button>
+              {selectedTemplateId && (
+                <button
+                  type="button"
+                  onClick={handleCloneAsNewTemplate}
+                  disabled={saving}
+                  className="rounded-xl border border-blue-300 bg-blue-50 px-5 py-3 font-bold text-blue-700 hover:bg-blue-100 transition disabled:opacity-60"
+                >
+                  نسخ كقالب جديد
+                </button>
+              )}
               {selectedTemplateId && (
                 <button
                   type="button"
