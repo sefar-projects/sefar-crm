@@ -63,6 +63,13 @@ const CIVIL_STATUS_LABELS = {
 
 const NO_SPONSOR_TEMPLATE_KEY = '__none__';
 
+const normalizeUrl = (value) => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
+
 export default function TourismVisaSteps({
   request,
   onBack,
@@ -316,13 +323,25 @@ export default function TourismVisaSteps({
                               />
                             </td>
                             <td className="p-3">
-                              <input
-                                value={item.link}
-                                onChange={(event) => updateText(stageIndex, stepIndex, itemIndex, 'link', event.target.value)}
-                                placeholder="أضف رابط..."
-                                readOnly={!canEditItemProgress}
-                                className={`w-full px-2 py-1 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-sm ${!canEditItemProgress ? 'cursor-not-allowed opacity-80' : ''}`}
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  value={item.link}
+                                  onChange={(event) => updateText(stageIndex, stepIndex, itemIndex, 'link', event.target.value)}
+                                  placeholder="أضف رابط..."
+                                  readOnly={!canEditItemProgress}
+                                  className={`w-full px-2 py-1 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none text-sm ${!canEditItemProgress ? 'cursor-not-allowed opacity-80' : ''}`}
+                                />
+                                {item.link?.trim() && (
+                                  <a
+                                    href={normalizeUrl(item.link)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center text-xs font-bold text-blue-700 hover:text-blue-900"
+                                  >
+                                    فتح الرابط
+                                  </a>
+                                )}
+                              </div>
                             </td>
                             <td className="p-3 text-center">
                               <input

@@ -12,6 +12,13 @@ const CIVIL_STATUS_OPTIONS = [
 const isSponsorRequired = (civilStatus) => civilStatus === 'student' || civilStatus === 'unemployed';
 const NO_SPONSOR_TEMPLATE_KEY = '__none__';
 
+const normalizeUrl = (value) => {
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `https://${trimmed}`;
+};
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const createEmptyItem = () => ({
@@ -486,11 +493,23 @@ export default function TourismTemplateManager({ onBack }) {
                                 />
                               </td>
                               <td className="p-2">
-                                <input
-                                  value={item.link}
-                                  onChange={(event) => updateItem(stageIndex, stepIndex, itemIndex, 'link', event.target.value)}
-                                  className="w-full rounded-lg border border-slate-300 px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                                <div className="space-y-2">
+                                  <input
+                                    value={item.link}
+                                    onChange={(event) => updateItem(stageIndex, stepIndex, itemIndex, 'link', event.target.value)}
+                                    className="w-full rounded-lg border border-slate-300 px-2 py-1 outline-none focus:ring-2 focus:ring-blue-500"
+                                  />
+                                  {item.link?.trim() && (
+                                    <a
+                                      href={normalizeUrl(item.link)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="inline-flex items-center text-xs font-bold text-blue-700 hover:text-blue-900"
+                                    >
+                                      فتح الرابط
+                                    </a>
+                                  )}
+                                </div>
                               </td>
                               <td className="p-2">
                                 <button type="button" onClick={() => deleteItem(stageIndex, stepIndex, itemIndex)} className="text-xs font-bold text-red-600 hover:text-red-800">
