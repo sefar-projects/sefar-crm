@@ -10,7 +10,7 @@ const CIVIL_STATUS_OPTIONS = [
 ];
 
 const isSponsorRequired = (civilStatus) => civilStatus === 'student' || civilStatus === 'unemployed';
-const NO_SPONSOR_TEMPLATE_KEY = '__none__';
+const NO_SPONSOR_TEMPLATE_KEY = 'none';
 
 const normalizeUrl = (value) => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -349,7 +349,11 @@ export default function TourismTemplateManager({ onBack }) {
 
     if (error) {
       console.error('Failed to save tourism template:', error);
-      setErrorMessage('تعذر حفظ القالب حالياً.');
+      if (error.code === '42P10') {
+        setErrorMessage('تعذر حفظ القالب: جدول القوالب يحتاج قيد UNIQUE على (country_id, visa_type_id, civil_status, sponsor_civil_status).');
+      } else {
+        setErrorMessage('تعذر حفظ القالب حالياً.');
+      }
       setSaving(false);
       return;
     }

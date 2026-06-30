@@ -61,7 +61,7 @@ const CIVIL_STATUS_LABELS = {
   unemployed: 'بطال',
 };
 
-const NO_SPONSOR_TEMPLATE_KEY = '__none__';
+const NO_SPONSOR_TEMPLATE_KEY = 'none';
 
 const normalizeUrl = (value) => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
@@ -123,7 +123,11 @@ export default function TourismVisaSteps({
       alert('تم الحفظ بنجاح!');
     } catch (error) {
       console.error('Error updating tourism request:', error);
-      alert('خطأ في حفظ البيانات');
+      if (error?.code === '42P10') {
+        alert('خطأ في حفظ القالب: يجب إضافة UNIQUE على (country_id, visa_type_id, civil_status, sponsor_civil_status).');
+      } else {
+        alert('خطأ في حفظ البيانات');
+      }
     } finally {
       setIsSaving(false);
     }

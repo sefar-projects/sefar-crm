@@ -66,7 +66,7 @@ const normalizePerson = (person) => ({
 });
 
 const isSponsorRequired = (civilStatus) => civilStatus === 'student' || civilStatus === 'unemployed';
-const NO_SPONSOR_TEMPLATE_KEY = '__none__';
+const NO_SPONSOR_TEMPLATE_KEY = 'none';
 
 export default function TourismVisaRequestForm({
   country,
