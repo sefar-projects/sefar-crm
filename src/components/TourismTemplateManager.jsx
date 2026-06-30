@@ -9,6 +9,9 @@ const CIVIL_STATUS_OPTIONS = [
   { value: 'unemployed', label: 'بطال' },
 ];
 
+const isSponsorRequired = (civilStatus) => civilStatus === 'student' || civilStatus === 'unemployed';
+const NO_SPONSOR_TEMPLATE_KEY = '__none__';
+
 const createId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const createEmptyItem = () => ({
@@ -63,13 +66,15 @@ export default function TourismTemplateManager({ onBack }) {
   const [countryId, setCountryId] = useState('');
   const [visaTypeId, setVisaTypeId] = useState('');
   const [civilStatus, setCivilStatus] = useState('');
+  const [sponsorCivilStatus, setSponsorCivilStatus] = useState('');
   const [stages, setStages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
 
-  const canLoadTemplate = countryId && visaTypeId && civilStatus;
+  const sponsorNeeded = isSponsorRequired(civilStatus);
+  const canLoadTemplate = countryId && visaTypeId && civilStatus && (!sponsorNeeded || sponsorCivilStatus);
 
   const selectedCountry = useMemo(
     () => countries.find((country) => country.id === countryId) || null,
@@ -169,6 +174,7 @@ export default function TourismTemplateManager({ onBack }) {
         .eq('country_id', countryId)
         .eq('visa_type_id', visaTypeId)
         .eq('civil_status', civilStatus)
+        .eq('sponsor_civil_status', sponsorNeeded ? sponsorCivilStatus : NO_SPONSOR_TEMPLATE_KEY)
         .maybeSingle();
 
       if (!isActive) return;
@@ -192,7 +198,7 @@ export default function TourismTemplateManager({ onBack }) {
     return () => {
       isActive = false;
     };
-  }, [canLoadTemplate, countryId, visaTypeId, civilStatus]);
+  }, [canLoadTemplate, countryId, visaTypeId, civilStatus, sponsorNeeded, sponsorCivilStatus]);
 
   const addStage = () => setStages((previous) => [...previous, createEmptyStage()]);
 
@@ -286,7 +292,7 @@ export default function TourismTemplateManager({ onBack }) {
 
   const handleSaveTemplate = async () => {
     if (!canLoadTemplate) {
-      setErrorMessage('اختر البلد ونوع الفيزا والحالة المدنية أولاً.');
+      setErrorMessage('اختر البلد ونوع الفيزا والحالة المدنية، وأضف حالة الكفيل عند الحاجة.');
       return;
     }
 
@@ -301,10 +307,11 @@ export default function TourismTemplateManager({ onBack }) {
           country_id: countryId,
           visa_type_id: visaTypeId,
           civil_status: civilStatus,
+          sponsor_civil_status: sponsorNeeded ? sponsorCivilStatus : NO_SPONSOR_TEMPLATE_KEY,
           stages_data: stages,
         },
         {
-          onConflict: 'country_id,visa_type_id,civil_status',
+          onConflict: 'country_id,visa_type_id,civil_status,sponsor_civil_status',
         },
       );
 
@@ -324,7 +331,7 @@ export default function TourismTemplateManager({ onBack }) {
       <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-black text-slate-900">إعداد قوالب السياحة والأسفار</h2>
-          <p className="text-sm text-slate-500 mt-1">اختر البلد + نوع الفيزا + الحالة المدنية ثم عدّل جدول الوثائق واحفظه كقالب.</p>
+          <p className="text-sm text-slate-500 mt-1">اختر البلد + نوع الفيزا + الحالة المدنية (+ حالة الكفيل عند الحاجة) ثم عدّل جدول الوثائق واحفظه كقالب.</p>
         </div>
         <button
           type="button"
@@ -376,7 +383,13 @@ export default function TourismTemplateManager({ onBack }) {
               <label className="block text-sm font-semibold text-slate-700 mb-2">الحالة المدنية</label>
               <select
                 value={civilStatus}
-                onChange={(event) => setCivilStatus(event.target.value)}
+                onChange={(event) => {
+                  setCivilStatus(event.target.value);
+                  setSponsorCivilStatus('');
+                  setStages([]);
+                  setMessage('');
+                  setErrorMessage('');
+                }}
                 className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="">اختر الحالة المدنية...</option>
@@ -385,6 +398,22 @@ export default function TourismTemplateManager({ onBack }) {
                 ))}
               </select>
             </div>
+
+            {sponsorNeeded && (
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">الحالة المدنية للكفيل</label>
+                <select
+                  value={sponsorCivilStatus}
+                  onChange={(event) => setSponsorCivilStatus(event.target.value)}
+                  className="w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  <option value="">اختر حالة الكفيل...</option>
+                  {CIVIL_STATUS_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>{option.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
           </div>
 
           {loading && (
@@ -396,6 +425,9 @@ export default function TourismTemplateManager({ onBack }) {
           {!loading && canLoadTemplate && (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
               القالب الحالي: <span className="font-bold text-slate-900">{selectedCountry?.name || '-'} - {selectedVisaType?.name || '-'} - {(CIVIL_STATUS_OPTIONS.find((option) => option.value === civilStatus)?.label) || '-'}</span>
+              {sponsorNeeded && (
+                <span className="font-bold text-slate-900"> - كفيل: {(CIVIL_STATUS_OPTIONS.find((option) => option.value === sponsorCivilStatus)?.label) || '-'}</span>
+              )}
             </div>
           )}
 
@@ -513,7 +545,7 @@ export default function TourismTemplateManager({ onBack }) {
 
           {!loading && !canLoadTemplate && (
             <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500">
-              اختر البلد ونوع الفيزا والحالة المدنية لبدء إدارة القالب.
+              اختر البلد ونوع الفيزا والحالة المدنية، وعند اختيار بطال/متمدرس حدّد أيضاً الحالة المدنية للكفيل.
             </div>
           )}
 

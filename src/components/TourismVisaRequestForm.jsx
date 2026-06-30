@@ -66,6 +66,7 @@ const normalizePerson = (person) => ({
 });
 
 const isSponsorRequired = (civilStatus) => civilStatus === 'student' || civilStatus === 'unemployed';
+const NO_SPONSOR_TEMPLATE_KEY = '__none__';
 
 export default function TourismVisaRequestForm({
   country,
@@ -325,14 +326,16 @@ export default function TourismVisaRequestForm({
     return data;
   };
 
-  const loadTourismTemplate = async (civilStatus) => {
-    const { data, error } = await supabase
+  const loadTourismTemplate = async (civilStatus, sponsorCivilStatus) => {
+    const templateQuery = supabase
       .from('tourism_visa_templates')
       .select('stages_data')
       .eq('country_id', country.id)
       .eq('visa_type_id', visaType.id)
       .eq('civil_status', civilStatus)
-      .maybeSingle();
+      .eq('sponsor_civil_status', isSponsorRequired(civilStatus) ? sponsorCivilStatus : NO_SPONSOR_TEMPLATE_KEY);
+
+    const { data, error } = await templateQuery.maybeSingle();
 
     if (error) {
       console.error('Failed to load tourism template:', error);
@@ -400,7 +403,7 @@ export default function TourismVisaRequestForm({
         return;
       }
 
-      const initialStages = await loadTourismTemplate(normalizedPrimary.civil_status);
+      const initialStages = await loadTourismTemplate(normalizedPrimary.civil_status, normalizedSponsorCivilStatus || NO_SPONSOR_TEMPLATE_KEY);
 
       const { data: authData } = await supabase.auth.getUser();
       const currentUser = authData?.user || null;

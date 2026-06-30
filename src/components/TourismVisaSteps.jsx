@@ -58,7 +58,10 @@ const CIVIL_STATUS_LABELS = {
   student: 'متمدرس',
   merchant: 'تاجر',
   public_employee: 'موظف عمومي',
+  unemployed: 'بطال',
 };
+
+const NO_SPONSOR_TEMPLATE_KEY = '__none__';
 
 export default function TourismVisaSteps({
   request,
@@ -81,10 +84,11 @@ export default function TourismVisaSteps({
           country_id: request.country_id,
           visa_type_id: request.visa_type_id,
           civil_status: request.civil_status,
+          sponsor_civil_status: request.sponsor_civil_status || NO_SPONSOR_TEMPLATE_KEY,
           stages_data: newStages,
         },
         {
-          onConflict: 'country_id,visa_type_id,civil_status',
+          onConflict: 'country_id,visa_type_id,civil_status,sponsor_civil_status',
         },
       );
 
@@ -189,6 +193,11 @@ export default function TourismVisaSteps({
           <div className="bg-slate-100 px-4 py-2 rounded-lg font-bold text-slate-700">
             الحالة المدنية: {CIVIL_STATUS_LABELS[request?.civil_status] || request?.civil_status}
           </div>
+          {(request?.civil_status === 'student' || request?.civil_status === 'unemployed') && (
+            <div className="bg-slate-100 px-4 py-2 rounded-lg font-bold text-slate-700">
+              حالة الكفيل: {CIVIL_STATUS_LABELS[request?.sponsor_civil_status] || request?.sponsor_civil_status || '-'}
+            </div>
+          )}
           <div className={`px-4 py-2 rounded-lg font-bold border-2 ${getStatusColor(getOverallStatus(stages))}`}>
             حالة الملف: {getStatusLabel(getOverallStatus(stages))}
           </div>
