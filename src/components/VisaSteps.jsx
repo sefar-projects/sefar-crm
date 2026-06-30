@@ -1,6 +1,12 @@
 import { useState } from 'react';
 import { supabase } from '../supabaseClient';
 
+let localIdCounter = 0;
+const createLocalId = () => {
+  localIdCounter += 1;
+  return `local-${localIdCounter}`;
+};
+
 const normalizeUrl = (value) => {
   const trimmed = typeof value === 'string' ? value.trim() : '';
   if (!trimmed) return '';
@@ -19,12 +25,23 @@ export default function VisaSteps({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const allowStructureEditing = canEditStructure && isEditing;
+  const allowStepStatusEditing = allowStructureEditing || canEditItemProgress;
   const canSave = canEditStructure || canEditItemProgress;
 
   const saveToDatabase = async (newStages) => {
+    const normalizedStages = newStages.map((stage) => ({
+      ...stage,
+      steps: (stage.steps || []).map((step) => {
+        if (step.status === 'cancelled') {
+          return step;
+        }
+        return { ...step, status: getStepStatus(step) };
+      }),
+    }));
+
     setIsSaving(true);
-    setStages(newStages);
-    const { error } = await supabase.from('clients').update({ stages_data: newStages }).eq('id', client.id);
+    setStages(normalizedStages);
+    const { error } = await supabase.from('clients').update({ stages_data: normalizedStages }).eq('id', client.id);
     if (error) {
       console.error("Error updating client:", error);
       alert("خطأ في حفظ البيانات");
@@ -96,12 +113,12 @@ export default function VisaSteps({
   };
 
   // دوال البناء والحذف
-  const addStage = () => saveToDatabase([...stages, { id: Date.now(), title: 'مرحلة جديدة', steps: [] }]);
+  const addStage = () => saveToDatabase([...stages, { id: createLocalId(), title: 'مرحلة جديدة', steps: [] }]);
   const deleteStage = (stageIndex) => saveToDatabase(stages.filter((_, i) => i !== stageIndex));
   
   const addStep = (stageIndex) => {
     const newStages = [...stages];
-    newStages[stageIndex].steps.push({ id: Date.now(), title: 'خطوة جديدة', status: 'pending', items: [] });
+    newStages[stageIndex].steps.push({ id: createLocalId(), title: 'خطوة جديدة', status: 'pending', items: [] });
     saveToDatabase(newStages);
   };
 
@@ -113,7 +130,10 @@ export default function VisaSteps({
 
   const addItem = (stageIndex, stepIndex) => {
     const newStages = [...stages];
-    newStages[stageIndex].steps[stepIndex].items.push({ id: Date.now(), name: 'مهمة جديدة', link: '', note: '', isChecked: false });
+    newStages[stageIndex].steps[stepIndex].items.push({ id: createLocalId(), name: 'مهمة جديدة', link: '', note: '', isChecked: false });
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     saveToDatabase(newStages);
   };
 
@@ -134,12 +154,18 @@ export default function VisaSteps({
   const deleteItem = (stageIndex, stepIndex, itemIndex) => {
     const newStages = [...stages];
     newStages[stageIndex].steps[stepIndex].items.splice(itemIndex, 1);
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     setStages(newStages);
   };
 
   const toggleCheckbox = (stageIndex, stepIndex, itemIndex) => {
     const newStages = [...stages];
     newStages[stageIndex].steps[stepIndex].items[itemIndex].isChecked = !newStages[stageIndex].steps[stepIndex].items[itemIndex].isChecked;
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     setStages(newStages);
   };
 
@@ -217,6 +243,7 @@ export default function VisaSteps({
 
                 {/* الخطوات */}
                 {stage.steps.map((step, stIdx) => {
+                  const effectiveStepStatus = step.status === 'cancelled' ? 'cancelled' : getStepStatus(step);
                   return (
                     <div key={step.id} className="bg-white rounded-lg p-5 mb-5 border-2 border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                       {/* رأس الخطوة */}
@@ -232,10 +259,10 @@ export default function VisaSteps({
                             <h3 className="font-bold text-lg">{step.title}</h3>
                           )}
                           <select 
-                            value={step.status || 'pending'}
+                            value={effectiveStepStatus}
                             onChange={(e) => updateStepStatus(sIdx, stIdx, e.target.value)}
-                            disabled={!allowStructureEditing}
-                            className={`px-3 py-1 rounded-lg font-semibold text-sm border-2 outline-none cursor-pointer ${getStatusColor(step.status || 'pending')}`}
+                            disabled={!allowStepStatusEditing}
+                            className={`px-3 py-1 rounded-lg font-semibold text-sm border-2 outline-none cursor-pointer ${getStatusColor(effectiveStepStatus)}`}
                           >
                             <option value="pending">○ قيد الانتظار</option>
                             <option value="in_progress">⚙️ قيد العمل</option>

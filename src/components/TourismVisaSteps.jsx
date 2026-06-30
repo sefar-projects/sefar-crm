@@ -81,6 +81,7 @@ export default function TourismVisaSteps({
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const allowStructureEditing = canEditStructure && isEditing;
+  const allowStepStatusEditing = allowStructureEditing || canEditItemProgress;
   const canSave = canEditStructure || canEditItemProgress;
 
   const saveTemplate = async (newStages) => {
@@ -106,20 +107,30 @@ export default function TourismVisaSteps({
   };
 
   const saveToDatabase = async (newStages) => {
+    const normalizedStages = newStages.map((stage) => ({
+      ...stage,
+      steps: (stage.steps || []).map((step) => {
+        if (step.status === 'cancelled') {
+          return step;
+        }
+        return { ...step, status: getStepStatus(step) };
+      }),
+    }));
+
     setIsSaving(true);
-    setStages(newStages);
+    setStages(normalizedStages);
 
     try {
       const { error } = await supabase
         .from('tourism_visa_requests')
-        .update({ stages_data: newStages })
+        .update({ stages_data: normalizedStages })
         .eq('id', request.id);
 
       if (error) {
         throw error;
       }
 
-      await saveTemplate(newStages);
+      await saveTemplate(normalizedStages);
       alert('تم الحفظ بنجاح!');
     } catch (error) {
       console.error('Error updating tourism request:', error);
@@ -160,6 +171,9 @@ export default function TourismVisaSteps({
   const addItem = (stageIndex, stepIndex) => {
     const newStages = [...stages];
     newStages[stageIndex].steps[stepIndex].items.push({ id: Date.now(), name: 'مستند جديد', note: '', link: '', isChecked: false });
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     saveToDatabase(newStages);
   };
 
@@ -184,6 +198,9 @@ export default function TourismVisaSteps({
   const deleteItem = (stageIndex, stepIndex, itemIndex) => {
     const newStages = [...stages];
     newStages[stageIndex].steps[stepIndex].items.splice(itemIndex, 1);
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     setStages(newStages);
   };
 
@@ -191,6 +208,9 @@ export default function TourismVisaSteps({
     const newStages = [...stages];
     const item = newStages[stageIndex].steps[stepIndex].items[itemIndex];
     item.isChecked = !item.isChecked;
+    if (newStages[stageIndex].steps[stepIndex].status !== 'cancelled') {
+      newStages[stageIndex].steps[stepIndex].status = getStepStatus(newStages[stageIndex].steps[stepIndex]);
+    }
     setStages(newStages);
   };
 
@@ -262,6 +282,9 @@ export default function TourismVisaSteps({
                 </div>
 
                 {stage.steps.map((step, stepIndex) => (
+                  (() => {
+                    const effectiveStepStatus = step.status === 'cancelled' ? 'cancelled' : getStepStatus(step);
+                    return (
                   <div key={step.id} className="bg-white rounded-lg p-5 mb-5 border-2 border-slate-200 shadow-sm hover:shadow-md transition-shadow">
                     <div className="flex justify-between items-center mb-4 pb-3 border-b-2 border-slate-200 gap-3 flex-wrap">
                       <div className="flex items-center gap-3 flex-wrap">
@@ -275,10 +298,10 @@ export default function TourismVisaSteps({
                           <h3 className="font-bold text-lg">{step.title}</h3>
                         )}
                         <select
-                          value={step.status || 'pending'}
+                          value={effectiveStepStatus}
                           onChange={(event) => updateStepStatus(stageIndex, stepIndex, event.target.value)}
-                          disabled={!allowStructureEditing}
-                          className={`px-3 py-1 rounded-lg font-semibold text-sm border-2 outline-none cursor-pointer ${getStatusColor(step.status || 'pending')}`}
+                          disabled={!allowStepStatusEditing}
+                          className={`px-3 py-1 rounded-lg font-semibold text-sm border-2 outline-none cursor-pointer ${getStatusColor(effectiveStepStatus)}`}
                         >
                           <option value="pending">○ قيد الانتظار</option>
                           <option value="in_progress">⚙️ قيد العمل</option>
@@ -376,6 +399,8 @@ export default function TourismVisaSteps({
                       </div>
                     )}
                   </div>
+                    );
+                  })()
                 ))}
 
                 {allowStructureEditing && (
