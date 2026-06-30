@@ -342,6 +342,24 @@ export default function TourismVisaRequestForm({
       return [];
     }
 
+    if (!data && !isSponsorRequired(civilStatus)) {
+      const { data: legacyData, error: legacyError } = await supabase
+        .from('tourism_visa_templates')
+        .select('stages_data')
+        .eq('country_id', country.id)
+        .eq('visa_type_id', visaType.id)
+        .eq('civil_status', civilStatus)
+        .is('sponsor_civil_status', null)
+        .maybeSingle();
+
+      if (legacyError) {
+        console.error('Failed to load legacy tourism template:', legacyError);
+        return [];
+      }
+
+      return Array.isArray(legacyData?.stages_data) ? legacyData.stages_data : [];
+    }
+
     return Array.isArray(data?.stages_data) ? data.stages_data : [];
   };
 

@@ -489,16 +489,55 @@ const onSubmit = async (data) => {
         return;
       }
 
-      // 1. البحث الذكي عن قالب جاهز لهذه الدولة في Supabase
-      const { data: templateData, error: templateError } = await supabase
+      // 1. البحث الذكي عن قالب جاهز لهذه الدولة/المستوى مع fallback للقوالب القديمة
+      const normalizedEducation = typeof data.education === 'string' ? data.education.trim() : '';
+
+      let templateRow = null;
+
+      const baseQuery = supabase
         .from('visa_templates')
-        .select('stages_data')
+        .select('stages_data, created_at')
         .eq('destination', finalDestination)
-        .maybeSingle(); // maybeSingle لا تظهر خطأ إذا لم تجد شيئاً
-      if (templateError) throw templateError;
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (normalizedEducation) {
+        const { data: educationMatch, error: educationError } = await baseQuery.eq('education_level', normalizedEducation);
+        if (educationError) throw educationError;
+        templateRow = educationMatch?.[0] || null;
+
+        if (!templateRow) {
+          const { data: genericMatch, error: genericError } = await supabase
+            .from('visa_templates')
+            .select('stages_data, created_at')
+            .eq('destination', finalDestination)
+            .is('education_level', null)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+          if (genericError) throw genericError;
+          templateRow = genericMatch?.[0] || null;
+        }
+      } else {
+        const { data: genericMatch, error: genericError } = await baseQuery.is('education_level', null);
+        if (genericError) throw genericError;
+        templateRow = genericMatch?.[0] || null;
+      }
+
+      if (!templateRow) {
+        const { data: anyMatch, error: anyError } = await supabase
+          .from('visa_templates')
+          .select('stages_data, created_at')
+          .eq('destination', finalDestination)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (anyError) throw anyError;
+        templateRow = anyMatch?.[0] || null;
+      }
 
       // إذا وجد قالباً يسحبه، وإلا يترك مساحة العمل فارغة لتبنيها أنت
-      const initialStages = templateData ? templateData.stages_data : [];
+      const initialStages = Array.isArray(templateRow?.stages_data) ? templateRow.stages_data : [];
 
       // 2. إنشاء العميل مع القالب المسحوب (أو الفارغ)
       const { data: newClient, error: insertError } = await supabase

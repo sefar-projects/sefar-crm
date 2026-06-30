@@ -193,6 +193,31 @@ export default function TourismTemplateManager({ onBack }) {
         return;
       }
 
+      if (!data && !sponsorNeeded) {
+        const { data: legacyData, error: legacyError } = await supabase
+          .from('tourism_visa_templates')
+          .select('id, stages_data')
+          .eq('country_id', countryId)
+          .eq('visa_type_id', visaTypeId)
+          .eq('civil_status', civilStatus)
+          .is('sponsor_civil_status', null)
+          .maybeSingle();
+
+        if (legacyError) {
+          console.error('Failed to load legacy tourism template:', legacyError);
+          setErrorMessage('تعذر تحميل القالب الحالي.');
+          setStages([]);
+          return;
+        }
+
+        const legacyNormalized = normalizeStages(legacyData?.stages_data || []);
+        setStages(legacyNormalized);
+        if (legacyNormalized.length === 0) {
+          setMessage('لا يوجد قالب محفوظ لهذا الاختيار بعد. يمكنك البدء ببناء قالب جديد.');
+        }
+        return;
+      }
+
       const normalized = normalizeStages(data?.stages_data || []);
       setStages(normalized);
       if (normalized.length === 0) {
